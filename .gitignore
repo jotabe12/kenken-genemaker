@@ -1,5 +1,8 @@
 node_modules
+dist
+output
 *.js
+!dist/**/*.js
 puzzle.html
 cagings
 solution.sbv

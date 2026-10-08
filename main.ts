@@ -42,7 +42,7 @@ sb.writeValue({
 })
 const stepsCount: number[] = [] //map of difficulties to count of cagings; key 0 for unsolvable
 function makeCaging() {
-	let cages: Cage[], steps: number
+	let cages: Cage[], steps: number = 0
 	let solved = false
 	while (!solved) {
 		cages = makeCages(board)

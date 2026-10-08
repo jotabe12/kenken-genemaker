@@ -1,18 +1,21 @@
 {
 	"name": "kenken-maker",
-	"version": "1.0.0",
-	"description": "Generates KenKen® puzzles",
-	"main": "main.js",
+	"version": "2.0.0",
+	"description": "Generates KenKen® puzzles with unique-solution guarantee",
+	"main": "dist/main.js",
 	"scripts": {
-		"clean": "rm -rf cagings solution.sbv puzzle.html",
+		"clean": "node -e \"const fs=require('fs');fs.rmSync('dist',{recursive:true,force:true});fs.rmSync('output',{recursive:true,force:true})\"",
 		"build": "tsc",
-		"test": "echo \"Error: no test specified\" && exit 1"
+		"generate": "node dist/generate.js",
+		"test": "node dist/generate.test.js",
+		"postinstall": "npx playwright install chromium --with-deps || echo 'Playwright browser install skipped (run npx playwright install chromium manually)'"
 	},
 	"author": "Caleb Sander",
 	"license": "MIT",
 	"dependencies": {
-		"@types/node": "^9.6.1",
+		"@types/node": "^20.14.0",
+		"playwright": "^1.45.0",
 		"structure-bytes": "^17.1.0",
-		"typescript": "^2.8.1"
+		"typescript": "^5.5.0"
 	}
 }

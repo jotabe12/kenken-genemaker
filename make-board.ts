@@ -1,5 +1,6 @@
 import {Box, Cage, Op} from './types'
-import {rand, transpose} from './utils'
+import {transpose} from './utils'
+import {getGlobalRng} from './seeded-random'
 
 const SHUFFLE_TIMES = 1e5 //number of times to shuffle rows and columns when making random board
 const MIN_CAGE_SIZE = 1.05, MAX_CAGE_SIZE = 4.7 //decreased probability of size-1 and size-5 cages
@@ -9,6 +10,7 @@ const DIV_PROB = 0.5, //probability of picking '/' for cage op if possible
 type Board = number[][] //indexed by row, then col
 
 export function makeBoard(max: number, shuffleTimes = SHUFFLE_TIMES): Board {
+	const rng = getGlobalRng()
 	/*Strategy: start with a known board
 	  (first row is [1, ..., max] and each subsequent row is shifted over once more)
 	  e.g. 1 2 3
@@ -23,22 +25,22 @@ export function makeBoard(max: number, shuffleTimes = SHUFFLE_TIMES): Board {
 	}
 	//Then alternately swap rows and columns
 	for (let _ = 0; _ < shuffleTimes; _++) {
-		const r1 = rand(max)
-		let r2 = rand(max - 1)
+		const r1 = rng.rand(max)
+		let r2 = rng.rand(max - 1)
 		if (r2 >= r1) r2++ //r2 between 0 and max, but not equal to r1
-		[board[r1], board[r2]] = [board[r2], board[r1]]
+		;[board[r1], board[r2]] = [board[r2], board[r1]]
 		board = transpose(board) //what were columns become rows and get swapped next time
 	}
 	return board
 }
 
-const makeCageSize = () =>
-	Math.round(MIN_CAGE_SIZE + Math.random() * (MAX_CAGE_SIZE - MIN_CAGE_SIZE))
+const makeCageSize = () => {
+	const rng = getGlobalRng()
+	return Math.round(MIN_CAGE_SIZE + rng.next() * (MAX_CAGE_SIZE - MIN_CAGE_SIZE))
+}
 type BoxId = string
 const boxId = (box: Box): BoxId => box.join(' ')
 const fromBoxId = (id: BoxId): Box => id.split(' ').map(Number) as Box
-const chooseRand = <T>(arr: T[]) => arr[rand(arr.length)]
-const extractRand = <T>(arr: T[]) => arr.splice(rand(arr.length), 1)[0]
 const DIRS: Box[] = [[1, 0], [-1, 0], [0, 1], [0, -1]]
 //Operations that can be used for any cage of size > 1 (- and / are not always possible)
 const alwaysPossibleOps: Op[] = ['+', '*']
@@ -50,43 +52,53 @@ function insertIntoSorted<T>(arr: T[], item: T, comp: (a: T, b: T) => number) {
 }
 const sortByLength = <T>(region1: T[], region2: T[]) => region1.length - region2.length
 function addCage(board: Board, cages: Cage[], boxes: Box[]) {
+	const rng = getGlobalRng()
 	const numbers = boxes.map(([row, col]) => board[row][col])
 	let op: Op, val: number
 	if (boxes.length === 1) {
 		op = '='
 		;[val] = numbers
 	}
-	else {
-		const max = Math.max(...numbers)
-		const sum = numbers.reduce((a, b) => a + b),
-		  product = numbers.reduce((a, b) => a * b)
-		const maxMinus = (max << 1) - sum,
-		        maxDiv = max ** 2 / product
-		op =
-			(maxDiv === (maxDiv | 0) && Math.random() < DIV_PROB) ? '/' : //try to use div if possible, since this is rarer
-			(maxMinus > 0 && Math.random() < MINUS_PROB) ? '-' :
-			chooseRand(alwaysPossibleOps)
-		switch (op) {
-			case '+':
-				val = sum
-				break
-			case '*':
-				val = product
-				break
-			case '-':
-				val = maxMinus
-				break
-			case '/':
-				val = maxDiv
-				break
-			default:
-				throw new Error('Unknown op: ' + op)
+	else if (boxes.length === 2) {
+		// For 2-cell cages, allow all operations
+		const [a, b] = numbers
+		const max = Math.max(a, b)
+		const min = Math.min(a, b)
+		const sum = a + b
+		const product = a * b
+		const diff = max - min
+		const quotient = max / min
+
+		if (quotient === (quotient | 0) && rng.next() < DIV_PROB) {
+			op = '/'
+			val = quotient
 		}
+		else if (diff > 0 && rng.next() < MINUS_PROB) {
+			op = '-'
+			val = diff
+		}
+		else {
+			op = rng.pick(alwaysPossibleOps)
+			if (op === '+') val = sum
+			else val = product
+		}
+		// Assign val for / and - if not yet set via the else branch
+		if (op === '/') val = quotient
+		else if (op === '-') val = diff
 	}
-	cages.push({op, val, boxes})
+	else {
+		// For cages with 3+ cells, only + and * are allowed (standard KenKen)
+		const sum = numbers.reduce((a, b) => a + b)
+		const product = numbers.reduce((a, b) => a * b)
+		op = rng.pick(alwaysPossibleOps)
+		if (op === '+') val = sum
+		else val = product
+	}
+	cages.push({op, val: val!, boxes})
 }
 
 export function makeCages(board: Board): Cage[] {
+	const rng = getGlobalRng()
 	const max = board.length
 	const cagedBoxes = new Set<BoxId>() //boxes in any cage
 	const neighborsOf = ([r, c]: Box) =>
@@ -104,13 +116,13 @@ export function makeCages(board: Board): Cage[] {
 		const region = unallocatedRegions.pop()! //choose largest region from which to carve out a cage
 		const regionRemaining = new Set(region.map(boxId)) //boxes in region which have not been put into cage
 		const cageSize = makeCageSize()
-		const cageStart = chooseRand(region)
+		const cageStart = rng.pick(region)
 		//Execute partial DFS from cageStart until cage has reached cageSize or no more neighbors exist
 		const cage: Box[] = []
 		const neighbors = [cageStart] //possible adjacent boxes to add to cage
 		const markedNeighbors = new Set([boxId(cageStart)]) //cage ∪ neighbors
 		while (cage.length < cageSize && neighbors.length) {
-			const cageBox = extractRand(neighbors) //new box selected to add to cage
+			const cageBox = rng.extract(neighbors) //new box selected to add to cage
 			const cageBoxId = boxId(cageBox)
 			cage.push(cageBox)
 			cagedBoxes.add(cageBoxId)
